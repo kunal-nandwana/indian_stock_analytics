@@ -1,0 +1,6 @@
+pandas
+requests
+functions-framework
+google-cloud-storage
+pyarrow
+gcsfs

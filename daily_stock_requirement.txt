@@ -1,0 +1,5 @@
+pandas
+pandas_market_calendars
+nselib
+google-cloud-storage
+pyarrow
