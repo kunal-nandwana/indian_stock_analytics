@@ -33,9 +33,13 @@ def sanitize_column_name(name):
     name = name.lower().strip().replace(" ", "_")
     return name
 
-def convert_object_columns_to_numeric(df):
+def convert_object_columns_to_numeric(df, exclude_columns=None):
+    if exclude_columns is None:
+        exclude_columns = []
+    
     for col in df.select_dtypes(include='object').columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        if col not in exclude_columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
 def upload_to_gcs_parquet(df, section_folder, company, section_filename):
@@ -91,19 +95,22 @@ def scrape_sections(company):
             continue
 
         if heading_text == "Quarterly Results":
-            df.rename(columns={df.columns[0]: "metric"}, inplace=True)
-            df.set_index("metric", inplace=True)
+            df.rename(columns={df.columns[0]: "year"}, inplace=True)
+            df.set_index("year", inplace=True)
             df = df.transpose().reset_index()
             df.rename(columns={"index": "quarter"}, inplace=True)
-            df.columns = [sanitize_column_name(str(col)) for col in df.columns]
+            df.columns = ["quarter" if col == "index" else sanitize_column_name(str(col)) for col in df.columns]
         else:
             df.rename(columns={df.columns[0]: "year"}, inplace=True)
             df.set_index("year", inplace=True)
             df = df.transpose().reset_index()
             df.columns = ["year" if col == "index" else sanitize_column_name(col) for col in df.columns]
 
+            # Debugging: Print 'year' column
+            print(f"Extracted 'year' column: {df['year'].head()}")
+
         # 🔁 Convert object columns to numeric
-        df = convert_object_columns_to_numeric(df)
+        df = convert_object_columns_to_numeric(df, exclude_columns=['year','opm','dividend_payout','tax'])
 
         # ➕ Add company_name column
         df["company_name"] = company
@@ -121,29 +128,29 @@ def scrape_company_data(request):
     Scrapes data for a fixed set of companies and stores them as Parquet in GCS.
     """
     companies = [
-        "TCS", "INFY", "RELIANCE", "HDFCBANK", "HDFC", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK",
-        "LT", "ITC", "BAJFINANCE", "HINDUNILVR", "MARUTI", "BHARTIARTL", "ASIANPAINT", "BAJAJ-AUTO",
-        "NESTLEIND", "ULTRACEMCO", "TITAN", "TECHM", "WIPRO", "HCLTECH", "ONGC", "POWERGRID", "NTPC",
-        "IOC", "CIPLA", "DRREDDY", "GRASIM", "M&M", "EICHERMOT", "HDFCLIFE", "TATASTEEL", "JSWSTEEL",
-        "BRITANNIA", "ADANIGREEN", "SUNPHARMA", "DIVISLAB", "BPCL", "HEROMOTOCO", "UPL", "LUPIN",
-        "TATAMOTORS", "VEDL", "COALINDIA", "INDUSINDBK", "BAJAJFINSV", "SHREECEM", "TATACONSUM",
-        "GAIL", "COLPAL", "MUTHOOTFIN", "TATAPOWER", "DLF", "IDFCFIRSTB", "ZOMATO", "INDIGO", "BOSCHLTD",
-        "SBILIFE", "PAGEIND", "BANKBARODA", "AUROPHARMA", "NMDC", "SRF", "PETRONET", "CROMPTON",
-        "GODREJCP", "ACC", "AMBUJACEM", "APOLLOHOSP", "CANBK", "MGL", "PVR", "HAVELLS", "VOLTAS",
-        "FEDERALBNK", "BERGEPAINT", "LICHSGFIN", "HINDPETRO", "ADANIPORTS", "EXIDEIND", "BANDHANBNK",
-        "ICICIPRULI", "SIEMENS", "HINDALCO", "TATAELXSI", "BHARATFORG", "GODREJPROP", "BANKINDIA",
-        "UBL", "IDBI", "IGL", "MINDTREE", "MCDOWELL-N", "ADANITRANS", "BIOCON", "CASTROLIND", "HDFCAMC",
-        "INDUSTOWER", "PIIND", "CANFINHOME", "TRENT", "TORNTPHARM", "BHEL", "TATAINVEST", "IRCTC",
-        "GMRINFRA", "TATACHEM", "MCX", "INDHOTEL", "WHIRLPOOL", "SANOFI", "MRF", "GODREJIND",
-        "CUMMINSIND", "AUBANK", "GLAXO", "CONCOR", "ICICIGI", "POLYCAB", "NIITTECH", "LTI", "JUBILANT",
-        "SRTRANSFIN", "PIDILITIND", "BALKRISIND", "MARICO", "INDIAMART", "BATAINDIA", "ALKEM",
-        "SHRIRAMFIN", "MOTHERSUMI", "PEL", "BAJAJHLDNG", "CUB", "HINDZINC", "NAVINFLUOR", "TORNTPOWER",
-        "VBL", "JINDALSTEL", "CADILAHC", "DABUR", "ASHOKLEY", "IBULHSGFIN", "AMARAJABAT", "GLENMARK",
-        "IDFC", "ADANIENT", "ADANIPOWER", "DMART", "RAJESHEXPO", "NAM-INDIA", "PGHH", "GILLETTE",
-        "AWL", "DIXON", "KAJARIACER", "HONAUT", "RELAXO", "BLUESTARCO", "ABBOTIND", "PFIZER",
-        "ASTRAZEN", "ERIS", "LALPATHLAB", "MEDANTA", "FORTIS", "UNITDSPR", "RADICO", "JIOFIN",
-        "ANGELONE", "BAJAJHFL", "TEAMLEASE", "QUESS"
-    ]
+    "TCS", "INFY", "RELIANCE", "HDFCBANK", "HDFC", "ICICIBANK", "KOTAKBANK", "SBIN", "AXISBANK",
+    "LT", "ITC", "BAJFINANCE", "HINDUNILVR", "MARUTI", "BHARTIARTL", "ASIANPAINT", "BAJAJ-AUTO",
+    "NESTLEIND", "ULTRACEMCO", "TITAN", "TECHM", "WIPRO", "HCLTECH", "ONGC", "POWERGRID", "NTPC",
+    "IOC", "CIPLA", "DRREDDY", "GRASIM", "M&M", "EICHERMOT", "HDFCLIFE", "TATASTEEL", "JSWSTEEL",
+    "BRITANNIA", "ADANIGREEN", "SUNPHARMA", "DIVISLAB", "BPCL", "HEROMOTOCO", "UPL", "LUPIN",
+    "TATAMOTORS", "VEDL", "COALINDIA", "INDUSINDBK", "BAJAJFINSV", "SHREECEM", "TATACONSUM",
+    "GAIL", "COLPAL", "MUTHOOTFIN", "TATAPOWER", "DLF", "IDFCFIRSTB", "ZOMATO", "INDIGO", "BOSCHLTD",
+    "SBILIFE", "PAGEIND", "BANKBARODA", "AUROPHARMA", "NMDC", "SRF", "PETRONET", "CROMPTON",
+    "GODREJCP", "ACC", "AMBUJACEM", "APOLLOHOSP", "CANBK", "MGL", "PVR", "HAVELLS", "VOLTAS",
+    "FEDERALBNK", "BERGEPAINT", "LICHSGFIN", "HINDPETRO", "ADANIPORTS", "EXIDEIND", "BANDHANBNK",
+    "ICICIPRULI", "SIEMENS", "HINDALCO", "TATAELXSI", "BHARATFORG", "GODREJPROP", "BANKINDIA",
+    "UBL", "IDBI", "IGL", "MINDTREE", "MCDOWELL-N", "ADANITRANS", "BIOCON", "CASTROLIND", "HDFCAMC",
+    "INDUSTOWER", "PIIND", "CANFINHOME", "TRENT", "TORNTPHARM", "BHEL", "TATAINVEST", "IRCTC",
+    "GMRINFRA", "TATACHEM", "MCX", "INDHOTEL", "WHIRLPOOL", "SANOFI", "MRF", "GODREJIND",
+    "CUMMINSIND", "AUBANK", "GLAXO", "CONCOR", "ICICIGI", "POLYCAB", "NIITTECH", "LTI", "JUBILANT",
+    "SRTRANSFIN", "PIDILITIND", "BALKRISIND", "MARICO", "INDIAMART", "BATAINDIA", "ALKEM",
+    "SHRIRAMFIN", "MOTHERSUMI", "PEL", "BAJAJHLDNG", "CUB", "HINDZINC", "NAVINFLUOR", "TORNTPOWER",
+    "VBL", "JINDALSTEL", "CADILAHC", "DABUR", "ASHOKLEY", "IBULHSGFIN", "AMARAJABAT", "GLENMARK",
+    "IDFC", "ADANIENT", "ADANIPOWER", "DMART", "RAJESHEXPO", "NAM-INDIA", "PGHH", "GILLETTE",
+    "AWL", "DIXON", "KAJARIACER", "HONAUT", "RELAXO", "BLUESTARCO", "ABBOTIND", "PFIZER",
+    "ASTRAZEN", "ERIS", "LALPATHLAB", "MEDANTA", "FORTIS", "UNITDSPR", "RADICO", "JIOFIN",
+    "ANGELONE", "BAJAJHFL", "TEAMLEASE", "QUESS"]
+
 
     for company in companies:
         scrape_sections(company)
