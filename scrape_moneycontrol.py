@@ -25,9 +25,12 @@ from bs4 import BeautifulSoup
 import csv
 import json
 from urllib.parse import urljoin
+from datetime import date, timedelta
 
 logging.basicConfig(level=logging.INFO)
 
+today = date.today()
+current_date    = today.strftime("%d-%m-%Y")
 
 def create_session(user_agent: str = None) -> requests.Session:
     s = requests.Session()
@@ -353,8 +356,14 @@ if __name__ == '__main__':
     for h in headlines:
         print('-', h)
 
+    
+    newpath = f'/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/news_data/{current_date}' 
+    if not os.path.exists(newpath):
+        os.makedirs(newpath)
+
+
     # Save to CSV if requested via env var
-    out_csv = os.environ.get('MONEYCONTROL_OUT_CSV') or '/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/ISA/indian_stock_analytics/moneycontrol_headlines.csv'
+    out_csv = os.environ.get('MONEYCONTROL_OUT_CSV') or f"{newpath}/moneycontrol_headlines.csv"
     try:
         save_items_to_csv(headlines, out_csv)
     except Exception:
