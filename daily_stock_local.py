@@ -97,18 +97,50 @@ def process_symbol(symbol, from_period, to_period, output_dir):
         return f"Failed for {symbol}: {str(e)}"
 
 
-# Multithreading: run up to 20 threads at a time
-today = date.today()
-yesterday = today - timedelta(days=1)
-from_period = '01-01-2013'
-to_period = today.strftime('%d-%m-%Y')
 
-results = []
-with ThreadPoolExecutor(max_workers=20) as executor:
-    future_to_symbol = {
-        executor.submit(process_symbol, symbol, from_period, to_period, output_dir): symbol
-        for symbol in company_symbols
-    }
-    for future in as_completed(future_to_symbol):
-        result = future.result()
-        print(result)
+import argparse
+
+def get_default_dates():
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    return yesterday.strftime('%d-%m-%Y'), today.strftime('%d-%m-%Y')
+
+def main(from_period=None, to_period=None):
+    if not from_period or not to_period:
+        from_period, to_period = get_default_dates()
+
+    today = date.today()
+    current_date = today.strftime("%d-%m-%Y")
+    output_dir = f"/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/daily_data/{current_date}"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Fetch company symbols from bronze.equities_list table
+    PG_USER = 'kunal.nandwana'
+    PG_PASS = 'root'
+    PG_HOST = 'localhost'
+    PG_PORT = '5432'
+    PG_DB   = 'kunal.nandwana'
+
+    engine = sqlalchemy.create_engine(f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}")
+    query = "SELECT symbol FROM bronze.equities_list ORDER BY (date_of_listing::date) DESC"
+    with engine.connect() as conn:
+        result = conn.execute(text(query))
+        company_symbols = [row[0] for row in result]
+
+    results = []
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_symbol = {
+            executor.submit(process_symbol, symbol, from_period, to_period, output_dir): symbol
+            for symbol in company_symbols
+        }
+        for future in as_completed(future_to_symbol):
+            result = future.result()
+            print(result)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--from_date", type=str, help="Start date in DD-MM-YYYY")
+    parser.add_argument("--to_date", type=str, help="End date in DD-MM-YYYY")
+    args = parser.parse_args()
+    main(args.from_date, args.to_date)
