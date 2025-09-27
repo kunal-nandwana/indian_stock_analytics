@@ -70,6 +70,23 @@ df_selected = df_selected.rename(columns={
     'FACE VALUE': 'face_value'
 })
 
-# Load to PostgreSQL (replace if table exists)
-df_selected.to_sql('equities_list', engine, if_exists='append', index=False, schema='bronze')
+# Load to PostgreSQL using raw SQL to avoid pandas/SQLAlchemy compatibility issues
+with engine.begin() as conn:
+    for _, row in df_selected.iterrows():
+        conn.execute(text("""
+            INSERT INTO bronze.equities_list (symbol, name_of_company, series, date_of_listing, 
+                                            paid_up_value, market_lot, isin_number, face_value)
+            VALUES (:symbol, :name_of_company, :series, :date_of_listing, 
+                   :paid_up_value, :market_lot, :isin_number, :face_value)
+        """), {
+            'symbol': row['symbol'],
+            'name_of_company': row['name_of_company'],
+            'series': row['series'],
+            'date_of_listing': row['date_of_listing'],
+            'paid_up_value': row['paid_up_value'],
+            'market_lot': row['market_lot'],
+            'isin_number': row['isin_number'],
+            'face_value': row['face_value']
+        })
+
 print(f"Loaded {len(df_selected)} rows into bronze.equities_list table.")

@@ -42,7 +42,9 @@ print(f"Database connection string: postgresql+psycopg2://{PG_USER}:***@{PG_HOST
 engine = sqlalchemy.create_engine(connection_string)
 
 # Load symbol list once
+# SYMBOL_QUERY = "with cte as(select symbol,max(date) as dates from bronze.daily_nse_data group by symbol) select symbol from cte where dates!=current_date"
 SYMBOL_QUERY = "SELECT symbol FROM bronze.equities_list ORDER BY (date_of_listing::date) DESC"
+
 with engine.connect() as conn:
     company_symbols = [row[0] for row in conn.execute(text(SYMBOL_QUERY))]
 print(f"Total symbols: {len(company_symbols)}")
