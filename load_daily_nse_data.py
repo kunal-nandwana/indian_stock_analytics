@@ -21,8 +21,31 @@ csv_files = glob.glob(data_path)
 # Read and concatenate all CSVs
 df_list = []
 for file in csv_files:
-    df = pd.read_csv(file)
-    df_list.append(df)
+    try:
+        df = pd.read_csv(file)
+        
+        # Validate and clean symbol columns
+        if 'symbol' not in df.columns:
+            print(f"⚠️  Skipping {os.path.basename(file)}: No symbol column")
+            continue
+            
+        # Remove rows where symbol is null or empty
+        initial_rows = len(df)
+        df = df[df['symbol'].notna() & (df['symbol'] != '') & (df['symbol'] != 'nan')]
+        
+        if len(df) == 0:
+            print(f"⚠️  Skipping {os.path.basename(file)}: No valid symbol data")
+            continue
+            
+        if len(df) < initial_rows:
+            print(f"⚠️  {os.path.basename(file)}: Removed {initial_rows - len(df)} rows with invalid symbols")
+        
+        df_list.append(df)
+        print(f"✅ Loaded {os.path.basename(file)}: {len(df)} rows")
+        
+    except Exception as e:
+        print(f"❌ Error loading {os.path.basename(file)}: {e}")
+        continue
 
 if not df_list:
     print("No CSV files found.")
@@ -67,6 +90,24 @@ for col in numeric_cols:
 # Convert date column to datetime.date
 if 'date' in full_df.columns:
     full_df['date'] = pd.to_datetime(full_df['date'], errors='coerce').dt.date
+
+# --- Final validation before database insertion ---
+print(f"\n📊 Final data validation:")
+print(f"   Total rows before validation: {len(full_df)}")
+
+# Remove any remaining rows with null symbols
+null_symbols = full_df['symbol'].isna().sum()
+empty_symbols = (full_df['symbol'] == '').sum()
+if null_symbols > 0 or empty_symbols > 0:
+    print(f"   ⚠️  Found {null_symbols} null + {empty_symbols} empty symbols, removing...")
+    full_df = full_df[full_df['symbol'].notna() & (full_df['symbol'] != '')]
+
+print(f"   Total rows after validation: {len(full_df)}")
+print(f"   Unique symbols: {full_df['symbol'].nunique()}")
+
+if len(full_df) == 0:
+    print("❌ No valid data to load after validation!")
+    exit(1)
 
 # --- Deduplicate before loading ---
 # Keep only the row with the highest turnover for each (symbol, date)
