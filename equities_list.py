@@ -60,7 +60,7 @@ with engine.connect() as conn:
 
 # Rename columns to match DDL
 df_selected = df_selected.rename(columns={
-    'SYMBOL': 'symbol',
+    'SYMBOL': 'company_name',
     'NAME OF COMPANY': 'name_of_company',
     'SERIES': 'series',
     'DATE OF LISTING': 'date_of_listing',
@@ -74,12 +74,12 @@ df_selected = df_selected.rename(columns={
 with engine.begin() as conn:
     for _, row in df_selected.iterrows():
         conn.execute(text("""
-            INSERT INTO bronze.equities_list (symbol, name_of_company, series, date_of_listing, 
+            INSERT INTO bronze.equities_list (company_name, name_of_company, series, date_of_listing, 
                                             paid_up_value, market_lot, isin_number, face_value)
-            VALUES (:symbol, :name_of_company, :series, :date_of_listing, 
+            VALUES (:company_name, :name_of_company, :series, :date_of_listing, 
                    :paid_up_value, :market_lot, :isin_number, :face_value)
         """), {
-            'symbol': row['symbol'],
+            'company_name': row['company_name'],
             'name_of_company': row['name_of_company'],
             'series': row['series'],
             'date_of_listing': row['date_of_listing'],

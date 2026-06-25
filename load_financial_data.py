@@ -115,6 +115,10 @@ class FinancialDataLoader:
             # Clean column names to match database schema
             df.columns = [self._sanitize_column_name(col) for col in df.columns]
             
+            # Apply column name standardization BEFORE other processing
+            if section_name:
+                df = self._standardize_column_names(df, section_name)
+            
             # Special handling for quarterly table - rename 'quarter' to 'year'
             if section_name == 'quarterly' and 'quarter' in df.columns:
                 df = df.rename(columns={'quarter': 'year'})
@@ -139,12 +143,98 @@ class FinancialDataLoader:
         name = name.lower().strip().replace(" ", "_").replace("__", "_")
         return name.rstrip("_")
 
+    def _standardize_column_names(self, df, section_name):
+        """Standardize column names based on section type and common variations"""
+        
+        # Define column mappings for each section
+        column_mappings = {
+            'profit_loss': {
+                'revenue': 'sales',
+                'financing_profit': 'operating_profit', 
+                'financing_margin': 'opm'
+            },
+            'quarterly': {
+                'revenue': 'sales',
+                'financing_profit': 'operating_profit',
+                'financing_margin': 'opm'
+            },
+            # Add more mappings for other sections as needed
+            'balance_sheet': {
+                # Example: 'total_assets': 'assets'
+            },
+            'cash_flow': {
+                # Example mappings
+            },
+            'company_ratio': {
+                # Example mappings  
+            },
+            'shareholding': {
+                # Example mappings
+            }
+        }
+        
+        # Merge with custom mappings if they exist
+        if hasattr(self, '_custom_mappings') and section_name in self._custom_mappings:
+            if section_name in column_mappings:
+                column_mappings[section_name].update(self._custom_mappings[section_name])
+            else:
+                column_mappings[section_name] = self._custom_mappings[section_name]
+        
+        if section_name in column_mappings:
+            mappings = column_mappings[section_name]
+            
+            # Apply the mappings
+            for old_name, new_name in mappings.items():
+                if old_name in df.columns:
+                    df = df.rename(columns={old_name: new_name})
+                    logger.info(f"📝 Renamed column '{old_name}' to '{new_name}' in {section_name}")
+        
+        return df
+
+    def add_column_mapping(self, section_name, old_column, new_column):
+        """Add a new column mapping for a specific section"""
+        if not hasattr(self, '_custom_mappings'):
+            self._custom_mappings = {}
+        
+        if section_name not in self._custom_mappings:
+            self._custom_mappings[section_name] = {}
+        
+        self._custom_mappings[section_name][old_column] = new_column
+        logger.info(f"Added mapping for {section_name}: {old_column} -> {new_column}")
+
+    def preview_csv_columns(self, symbol, section_name):
+        """Preview the columns in a CSV file to help identify mapping needs"""
+        company_dir = self.data_dir / symbol
+        csv_file = company_dir / f"{section_name}.csv"
+        
+        if not csv_file.exists():
+            logger.error(f"CSV file not found: {csv_file}")
+            return None
+        
+        try:
+            df = pd.read_csv(csv_file)
+            original_columns = list(df.columns)
+            sanitized_columns = [self._sanitize_column_name(col) for col in df.columns]
+            
+            logger.info(f"\n📋 Column Preview for {symbol}/{section_name}:")
+            logger.info("Original -> Sanitized")
+            for orig, clean in zip(original_columns, sanitized_columns):
+                logger.info(f"  {orig} -> {clean}")
+            
+            return {
+                'original': original_columns,
+                'sanitized': sanitized_columns
+            }
+        except Exception as e:
+            logger.error(f"Error previewing {csv_file}: {e}")
+            return None
+
     def create_table_if_not_exists(self, table_name, df_sample):
         """Create table if it doesn't exist - tables already exist, so this is just a check"""
         # Tables already exist, just verify they're there
         check_sql = f"""
         SELECT EXISTS (
-            SELECT FROM information_schema.tables 
+            SELECT * FROM information_schema.tables 
             WHERE table_schema = '{self.schema}' 
             AND table_name = '{table_name}'
         )
@@ -329,18 +419,26 @@ class FinancialDataLoader:
                 logger.warning(f"CSV file not found: {csv_file}")
         
         logger.info(f"✅ Completed {symbol}: {success_count}/{len(self.sections)} sections loaded")
+        return success_count
 
     def process_all_companies(self):
         """Process all companies in the data directory"""
+        import shutil
+        from datetime import date
+        
         companies = self.get_company_folders()
         logger.info(f"\n🚀 Starting to process {len(companies)} companies...")
         
         success_companies = 0
+        processed_folders = []
+        
         for i, company in enumerate(companies, 1):
             try:
                 logger.info(f"\n[{i}/{len(companies)}] Processing {company}")
-                self.process_company(company)
-                success_companies += 1
+                sections_loaded = self.process_company(company)
+                if sections_loaded and sections_loaded > 0:
+                    success_companies += 1
+                    processed_folders.append(company)
                 
                 # Add 1.5 second sleep after each company for monitoring
                 logger.info(f"⏳ Sleeping for 1.5 seconds...")
@@ -350,16 +448,78 @@ class FinancialDataLoader:
                 logger.error(f"Error processing company {company}: {e}")
         
         logger.info(f"\n🎉 Completed! Successfully processed {success_companies}/{len(companies)} companies")
+        
+        # Archive processed company folders
+        if processed_folders:
+            archive_base = Path("/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/archive/financial_data")
+            current_date = date.today().strftime('%d-%m-%Y')
+            archive_dir = archive_base / current_date
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"\n📦 Archiving {len(processed_folders)} processed folders to {archive_dir}")
+            
+            for company in processed_folders:
+                try:
+                    source_dir = self.data_dir / company
+                    dest_dir = archive_dir / company
+                    
+                    # Remove existing folder if it exists to allow overwrite
+                    if dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                        logger.info(f"🔄 Overwriting existing {company} in archive")
+                    
+                    # Move the entire company folder
+                    shutil.move(str(source_dir), str(dest_dir))
+                    logger.info(f"✅ Archived {company} to {archive_dir}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to archive {company}: {e}")
+            
+            logger.info(f"📦 Archive complete: {len(processed_folders)} folders moved to {archive_dir}")
 
     def process_specific_companies(self, company_list):
         """Process only specific companies"""
+        import shutil
+        from datetime import date
+        
         logger.info(f"\n🎯 Processing specific companies: {company_list}")
         
+        processed_folders = []
         for company in company_list:
             try:
-                self.process_company(company)
+                sections_loaded = self.process_company(company)
+                if sections_loaded and sections_loaded > 0:
+                    processed_folders.append(company)
             except Exception as e:
                 logger.error(f"Error processing company {company}: {e}")
+        
+        # Archive processed company folders
+        if processed_folders:
+            archive_base = Path("/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/archive/financial_data")
+            current_date = date.today().strftime('%d-%m-%Y')
+            archive_dir = archive_base / current_date
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"\n📦 Archiving {len(processed_folders)} processed folders to {archive_dir}")
+            
+            for company in processed_folders:
+                try:
+                    source_dir = self.data_dir / company
+                    dest_dir = archive_dir / company
+                    
+                    # Remove existing folder if it exists to allow overwrite
+                    if dest_dir.exists():
+                        shutil.rmtree(dest_dir)
+                        logger.info(f"🔄 Overwriting existing {company} in archive")
+                    
+                    # Move the entire company folder
+                    shutil.move(str(source_dir), str(dest_dir))
+                    logger.info(f"✅ Archived {company} to {archive_dir}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to archive {company}: {e}")
+            
+            logger.info(f"📦 Archive complete: {len(processed_folders)} folders moved to {archive_dir}")
 
 
 def main():
@@ -384,6 +544,12 @@ def main():
         action='store_true',
         help='Test mode: process only first 3 companies'
     )
+    parser.add_argument(
+        '--preview',
+        nargs=2,
+        metavar=('SYMBOL', 'SECTION'),
+        help='Preview columns in a specific CSV file (e.g. --preview RELIANCE profit_loss)'
+    )
     
     args = parser.parse_args()
     
@@ -391,7 +557,16 @@ def main():
     loader = FinancialDataLoader(args.data_dir, args.schema)
     
     try:
-        if args.companies:
+        if args.preview:
+            # Preview mode: show columns in a specific CSV
+            symbol, section = args.preview
+            result = loader.preview_csv_columns(symbol, section)
+            if result:
+                print(f"\n📊 Available columns in {symbol}/{section}.csv:")
+                print("=" * 50)
+                for orig, clean in zip(result['original'], result['sanitized']):
+                    print(f"{orig:30} -> {clean}")
+        elif args.companies:
             # Process specific companies
             loader.process_specific_companies(args.companies)
         elif args.test:

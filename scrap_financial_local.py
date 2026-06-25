@@ -7,6 +7,7 @@ import random
 import re
 import sqlalchemy
 from sqlalchemy import text
+from io import StringIO  # Required for Pandas 2.2+ compatibility
 
 # Configuration
 base_output_dir = os.environ.get('FINANCIAL_DATA_OUTPUT_DIR', '/Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/financial_data')
@@ -15,7 +16,7 @@ print(f"Using financial data output directory: {base_output_dir}")
 
 session = requests.Session()
 headers = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 # Use consolidated URL first, add standalone fallback if needed
@@ -87,7 +88,8 @@ def scrape_sections(company):
             continue
 
         try:
-            df = pd.read_html(str(table))[0]
+            # FIX: Wrap table HTML string in StringIO to avoid "No such file or directory" error
+            df = pd.read_html(StringIO(str(table)), flavor='lxml')[0]
         except Exception as e:
             print(f"⚠️ Failed to parse table in '{heading_text}' for {company}: {e}")
             failed_sections.append(heading_text)
@@ -98,28 +100,23 @@ def scrape_sections(company):
             failed_sections.append(heading_text)
             continue
             
-        # Check if we got incomplete data (fewer than 3 years of data)
-        # Most companies should have at least 3-4 years of historical data
         year_columns = [col for col in df.columns if 'Mar' in str(col) or any(year in str(col) for year in ['2021', '2022', '2023', '2024', '2025'])]
         
-        # Check which year columns actually have data (not just NaN/empty values)
         valid_year_columns = []
         for col in year_columns:
             non_empty_count = df[col].dropna().count()
             if non_empty_count > 0:
                 valid_year_columns.append(col)
         
-        print(f"📊 Found {len(year_columns)} year columns for '{heading_text}' in {url_type} URL: {year_columns}")
-        print(f"📊 But only {len(valid_year_columns)} have actual data: {valid_year_columns}")
+        print(f"📊 Found {len(year_columns)} year columns for '{heading_text}' in {url_type} URL")
         
         if len(valid_year_columns) < 3 and url_type == "consolidated":
-            print(f"⚠️ Incomplete data in '{heading_text}' for {company} - only {len(valid_year_columns)} years with actual data in consolidated URL")
+            print(f"⚠️ Incomplete data in '{heading_text}' for {company} - checking standalone...")
             failed_sections.append(heading_text)
             continue
 
-        # Process data same as working version
+        # Transpose logic
         if heading_text == "Quarterly Results":
-            # Transpose like profit_loss
             df.rename(columns={df.columns[0]: "metric"}, inplace=True)
             df.set_index("metric", inplace=True)
             df = df.transpose().reset_index()
@@ -136,54 +133,29 @@ def scrape_sections(company):
         print(f"✅ Saved {section_filename} for {company} → {output_path}")
         sections_processed += 1
 
-    # If we got some failed sections with consolidated, try standalone for those
+    # Standalone Fallback Loop
     if failed_sections and url_type == "consolidated":
-        print(f"🔄 Trying standalone URL for failed/incomplete sections: {failed_sections}")
-        
         url = base_url_standalone.format(company)
         try:
             response = session.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             standalone_soup = BeautifulSoup(response.text, "html.parser")
-            print(f"🔗 Fetching additional data for {company} (standalone): {url}")
             
             for heading_text in failed_sections:
                 section_filename = sections[heading_text]
-                
                 heading = standalone_soup.find(lambda tag: tag.name in ["h2", "h4"] and heading_text in tag.text)
-                if not heading:
-                    print(f"❌ Section '{heading_text}' not found for {company} (standalone)")
-                    continue
-
+                if not heading: continue
                 table = heading.find_next("table", {"class": "data-table"})
-                if not table:
-                    print(f"❌ Table not found for '{heading_text}' for {company} (standalone)")
-                    continue
+                if not table: continue
 
                 try:
-                    df = pd.read_html(str(table))[0]
-                except Exception as e:
-                    print(f"⚠️ Failed to parse table in '{heading_text}' for {company} (standalone): {e}")
-                    continue
+                    # FIX: Wrap table HTML string in StringIO
+                    df = pd.read_html(StringIO(str(table)), flavor='lxml')[0]
+                except: continue
 
-                if df.empty or len(df.columns) < 2:
-                    print(f"⚠️ Still not enough data in '{heading_text}' for {company} (standalone URL)")
-                    continue
-                    
-                # Check if standalone has more complete data
-                year_columns = [col for col in df.columns if 'Mar' in str(col) or any(year in str(col) for year in ['2021', '2022', '2023', '2024', '2025'])]
+                if df.empty or len(df.columns) < 2: continue
                 
-                # Check which year columns actually have data (not just NaN/empty values)
-                valid_year_columns = []
-                for col in year_columns:
-                    non_empty_count = df[col].dropna().count()
-                    if non_empty_count > 0:
-                        valid_year_columns.append(col)
-                
-                print(f"📊 Standalone URL has {len(year_columns)} year columns for '{heading_text}': {year_columns}")
-                print(f"📊 With {len(valid_year_columns)} columns having actual data: {valid_year_columns}")
-
-                # Process data same as working version
+                # Transpose logic
                 if heading_text == "Quarterly Results":
                     df.rename(columns={df.columns[0]: "metric"}, inplace=True)
                     df.set_index("metric", inplace=True)
@@ -200,52 +172,32 @@ def scrape_sections(company):
                 df.to_csv(output_path, index=False)
                 print(f"✅ Saved {section_filename} for {company} (standalone) → {output_path}")
                 sections_processed += 1
-                
-        except requests.RequestException as e:
-            print(f"❌ Error fetching {company} (standalone): {e}")
+        except: pass
 
     print(f"📊 Processed {sections_processed}/6 sections for {company}")
-    
-    # Add 5 second sleep as requested
-    wait = 5.0  
-    print(f"🕒 Waiting {wait:.1f}s before next company...\n")
-    time.sleep(wait)
+    time.sleep(5.0)
 
-# Database configuration (consistent with daily_stock_local.py)
+# Database Execution
 PG_USER = os.environ.get('DATABASE_USER', 'kunal.nandwana')
 PG_PASS = os.environ.get('DATABASE_PASSWORD', 'root')
 PG_HOST = os.environ.get('DATABASE_HOST', 'localhost')
 PG_PORT = os.environ.get('DATABASE_PORT', '5432')
 PG_DB   = os.environ.get('DATABASE_NAME', 'kunal.nandwana')
+connection_string = f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 
-if 'DATABASE_URL' in os.environ:
-    connection_string = os.environ['DATABASE_URL']
-else:
-    connection_string = f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
-
-print(f"Connecting to database: {PG_HOST}:{PG_PORT} as {PG_USER}")
 engine = sqlalchemy.create_engine(connection_string)
 
-# Fetch companies from database instead of hardcoded list
 try:
     with engine.connect() as connection:
-        result = connection.execute(text("SELECT symbol FROM bronze.equities_list ORDER BY (date_of_listing::date) DESC"))
+        result = connection.execute(text("SELECT company_name FROM bronze.equities_list ORDER BY (date_of_listing::date) DESC"))
         companies = [row[0] for row in result.fetchall()]
-        print(f"📈 Fetched {len(companies)} companies from bronze.equities_list")
+        print(f"📈 Fetched {len(companies)} companies")
 except Exception as e:
-    print(f"❌ Error fetching companies from database: {e}")
-    # Fallback to sample companies for testing
-    companies = ["TCS", "INFY", "RELIANCE", "HDFCBANK", "HDFC"]
-    print(f"🔄 Using fallback sample companies: {companies}")
-
-print(f"🚀 Starting to scrape financial data for {len(companies)} companies...")
-print(f"📁 Output directory: {base_output_dir}")
-print(f"⏰ With 5 second delay between companies for monitoring")
+    print(f"❌ Database error: {e}")
+    companies = ["TCS", "RELIANCE"]
 
 for i, company in enumerate(companies, 1):
-    print(f"\n{'='*60}")
-    print(f"Processing {i}/{len(companies)}: {company}")
-    print(f"{'='*60}")
+    print(f"\nProcessing {i}/{len(companies)}: {company}")
     scrape_sections(company)
 
-print(f"\n✅ All done! Processed {len(companies)} companies")
+print(f"\n🚀 Pipeline Finished Successfully.")
