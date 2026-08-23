@@ -41,7 +41,7 @@ def scrape_sections(company):
     """Scrape financial sections for a company - try consolidated first, fallback to standalone if needed"""
     
     # Try consolidated first
-    url = base_url_consolidated.format(company)
+    url = base_url_standalone.format(company)
     print(f"\n🔗 Fetching data for {company} (consolidated): {url}")
     
     try:
@@ -53,7 +53,7 @@ def scrape_sections(company):
         print(f"❌ Error fetching {company} (consolidated): {e}")
         
         # Fallback to standalone
-        url = base_url_standalone.format(company)
+        url = base_url_consolidated.format(company)
         print(f"🔄 Trying standalone URL for {company}: {url}")
         
         try:

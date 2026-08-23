@@ -1,0 +1,14 @@
+2025-11-20 18:38:58,025 - INFO - Connecting to database: localhost:5432 as kunal.nandwana
+2025-11-20 18:38:58,092 - INFO - 🚀 Starting IPO GMP scraper
+2025-11-20 18:38:58,092 - INFO - Fetching data from https://www.investorgain.com/report/live-ipo-gmp/331/nonzero/
+2025-11-20 18:38:58,514 - INFO - ✅ Scraped 0 IPO records
+2025-11-20 18:38:58,517 - INFO - 💾 Saved to /Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/ipo_data/ipo_gmp_2025-11-20.csv
+2025-11-20 18:38:58,517 - WARNING - No data to load
+2025-11-20 18:38:58,517 - INFO - ✅ IPO GMP scraper completed
+2026-07-06 21:54:47,263 - INFO - Connecting to database: localhost:5432 as kunal.nandwana
+2026-07-06 21:54:47,312 - INFO - 🚀 Starting IPO GMP scraper
+2026-07-06 21:54:47,312 - INFO - Fetching data from https://www.investorgain.com/report/live-ipo-gmp/331/nonzero/
+2026-07-06 21:54:47,579 - INFO - ✅ Scraped 0 IPO records
+2026-07-06 21:54:47,583 - INFO - 💾 Saved to /Users/kunal.nandwana/Library/CloudStorage/OneDrive-OneWorkplace/Documents/Personal_Projects/Data/Indian Stock Analytics/ipo_data/ipo_gmp_2026-07-06.csv
+2026-07-06 21:54:47,583 - WARNING - No data to load
+2026-07-06 21:54:47,583 - INFO - ✅ IPO GMP scraper completed

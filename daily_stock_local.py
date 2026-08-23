@@ -91,7 +91,7 @@ engine = sqlalchemy.create_engine(connection_string)
 
 # Load symbol list once
 # SYMBOL_QUERY = "with cte as(select symbol,max(date) as dates from bronze.daily_nse_data group by symbol) select symbol from cte where dates!=current_date"
-SYMBOL_QUERY = "SELECT company_name FROM bronze.equities_list ORDER BY (date_of_listing::date) DESC"
+SYMBOL_QUERY = "select distinct ticker as company_name from gold.master_company_sectors"
 
 with engine.connect() as conn:
     company_symbols = [row[0] for row in conn.execute(text(SYMBOL_QUERY))]
